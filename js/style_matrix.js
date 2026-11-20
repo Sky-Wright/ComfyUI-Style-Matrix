@@ -80,18 +80,18 @@ app.registerExtension({
                     };
 
                     const origSortCallback = sortWidget.callback;
-                    sortWidget.callback = async function (value, canvas, node, pos, event) {
+                    sortWidget.callback = function (value, canvas, node, pos, event) {
                         if (origSortCallback) origSortCallback.apply(this, arguments);
-                        try {
-                            await api.fetchApi("/style_matrix/save_sort_mode", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ sort_mode: value }),
-                            });
-                        } catch (e) {
-                            console.error("StyleMatrix: Failed to save sort mode", e);
-                        }
+                        sortWidget.value = value;
                         updateStyleList();
+
+                        api.fetchApi("/style_matrix/save_sort_mode", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ sort_mode: value }),
+                        }).catch((e) => {
+                            console.error("StyleMatrix: Failed to save sort mode", e);
+                        });
                     };
 
                     const refreshStyles = async (selectCategory = null, selectName = null) => {
