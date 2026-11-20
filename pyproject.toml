@@ -8,6 +8,6 @@ license = { file = "LICENSE" }
 Repository = "https://github.com/Sky-Wright/ComfyUI-Style-Matrix"
 
 [tool.comfy]
-PublisherId = "YOUR_PUBLISHER_ID"
+PublisherId = "zivena"
 DisplayName = "Style Matrix"
 Icon = ""
