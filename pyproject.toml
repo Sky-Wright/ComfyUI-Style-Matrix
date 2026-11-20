@@ -5,7 +5,7 @@ version = "1.0.0"
 license = { file = "LICENSE" }
 
 [project.urls]
-Repository = "https://github.com/YOUR_USERNAME/ComfyUI-Style-Matrix"
+Repository = "https://github.com/Sky-Wright/ComfyUI-Style-Matrix"
 
 [tool.comfy]
 PublisherId = "YOUR_PUBLISHER_ID"
