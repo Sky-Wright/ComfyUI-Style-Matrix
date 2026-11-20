@@ -263,8 +263,25 @@ app.registerExtension({
                     // Save when pressing Enter while editing the filename field
                     let lastEnterTimestamp = 0;
                     const onWindowKeyDown = (e) => {
-                        if (e.key === "Enter" && document.activeElement?.tagName === "INPUT") {
-                            lastEnterTimestamp = Date.now();
+                        if (e.key !== "Enter") return;
+                        const active = document.activeElement;
+                        if (!active || active.tagName !== "INPUT") return;
+
+                        lastEnterTimestamp = Date.now();
+
+                        // If ComfyUI's inline/Vue input doesn't fire widget.callback on Enter,
+                        // detect that this node is active/matches the input and save directly.
+                        const isDirectInput = filenameWidget.inputEl && active === filenameWidget.inputEl;
+                        const isThisNodeSelected = Boolean(
+                            this.is_selected || app.canvas?.selected_nodes?.[this.id]
+                        );
+                        const matchesValue = active.value === filenameWidget.value;
+
+                        if (isDirectInput || (isThisNodeSelected && matchesValue)) {
+                            e.preventDefault();
+                            filenameWidget.value = active.value;
+                            lastEnterTimestamp = 0;
+                            performSave();
                         }
                     };
                     window.addEventListener("keydown", onWindowKeyDown, true);
@@ -274,15 +291,6 @@ app.registerExtension({
                         window.removeEventListener("keydown", onWindowKeyDown, true);
                         if (origOnRemoved) origOnRemoved.apply(this, arguments);
                     };
-
-                    if (filenameWidget.inputEl) {
-                        filenameWidget.inputEl.addEventListener("keydown", (e) => {
-                            if (e.key === "Enter") {
-                                e.preventDefault();
-                                performSave();
-                            }
-                        });
-                    }
 
                     const origFilenameCallback = filenameWidget.callback;
                     filenameWidget.callback = function (value, canvas, node, pos, event) {
