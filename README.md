@@ -37,7 +37,7 @@ It effectively replaces typing prompts directly into your CLIP Text Encode nodes
 1. **Place your JSON styles** in `ComfyUI/models/styles/` (or configure `styles:` in `extra_model_paths.yaml`).
 2. **Add the Node:** Right-click > `utils` > `styles` > `Style Matrix`.
 3. **Select a Category & Style:** Pick a style from the dropdown to populate the prompt boxes.
-4. **Connect:** Wire `positive_text` and `negative_text` into your CLIP Text Encode nodes.
+4. **Connect:** On your positive and negative **CLIP Text Encode** nodes, right-click > **Convert Widget to Input** > `text`, then wire `positive_text` and `negative_text` into them.
 
 ## License
 
