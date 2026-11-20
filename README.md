@@ -1,6 +1,8 @@
 # ComfyUI Style Matrix
 
-An interactive JSON prompt style manager for [ComfyUI](https://github.com/comfyanonymous/ComfyUI). Browse categorized `.json` style libraries, sort by name or recency, live-edit positive and negative prompts right on the node, and save, organize, or delete styles without leaving the graph.
+An interactive JSON prompt style manager for [ComfyUI](https://github.com/comfyanonymous/ComfyUI) — built as much for **organizing large style libraries** as for **rapidly creating and iterating on new ones**.
+
+It effectively replaces typing prompts directly into your CLIP Text Encode nodes: right-click your positive/negative CLIP nodes, convert `text` to an input, and wire **Style Matrix** straight in. Browse categorized `.json` styles, sort by name or recency, live-edit prompts before generating, and save or delete styles without leaving the graph.
 
 ## Features
 
