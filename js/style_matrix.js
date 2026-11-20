@@ -216,7 +216,9 @@ app.registerExtension({
                         refreshStyles();
                     });
 
-                    this.addWidget("button", "Save Style", "save", async (value, canvas, node) => {
+                    let isSaving = false;
+                    const performSave = async () => {
+                        if (isSaving) return;
                         const filename = filenameWidget.value;
                         const category = categoryWidget.value;
 
@@ -225,6 +227,7 @@ app.registerExtension({
                             return;
                         }
 
+                        isSaving = true;
                         const body = {
                             filename: filename,
                             category: category,
@@ -252,7 +255,47 @@ app.registerExtension({
                         } catch (error) {
                             console.error("StyleMatrix Save Error:", error);
                             window.alert(`An error occurred while saving the style: ${error.message}`);
+                        } finally {
+                            isSaving = false;
                         }
+                    };
+
+                    // Save when pressing Enter while editing the filename field
+                    let lastEnterTimestamp = 0;
+                    const onWindowKeyDown = (e) => {
+                        if (e.key === "Enter" && document.activeElement?.tagName === "INPUT") {
+                            lastEnterTimestamp = Date.now();
+                        }
+                    };
+                    window.addEventListener("keydown", onWindowKeyDown, true);
+
+                    const origOnRemoved = this.onRemoved;
+                    this.onRemoved = function () {
+                        window.removeEventListener("keydown", onWindowKeyDown, true);
+                        if (origOnRemoved) origOnRemoved.apply(this, arguments);
+                    };
+
+                    if (filenameWidget.inputEl) {
+                        filenameWidget.inputEl.addEventListener("keydown", (e) => {
+                            if (e.key === "Enter") {
+                                e.preventDefault();
+                                performSave();
+                            }
+                        });
+                    }
+
+                    const origFilenameCallback = filenameWidget.callback;
+                    filenameWidget.callback = function (value, canvas, node, pos, event) {
+                        if (origFilenameCallback) origFilenameCallback.apply(this, arguments);
+                        filenameWidget.value = value;
+                        if (Date.now() - lastEnterTimestamp < 250) {
+                            lastEnterTimestamp = 0;
+                            performSave();
+                        }
+                    };
+
+                    this.addWidget("button", "Save Style", "save", () => {
+                        performSave();
                     });
 
                     this.addWidget("button", "Delete Style", "delete", async (value, canvas, node) => {
