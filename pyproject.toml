@@ -1,0 +1,13 @@
+[project]
+name = "comfyui-style-matrix"
+description = "Interactive JSON prompt style manager for ComfyUI. Browse categories, sort, live-edit positive/negative prompts, and save or delete .json styles directly from the node graph."
+version = "1.0.0"
+license = { file = "LICENSE" }
+
+[project.urls]
+Repository = "https://github.com/YOUR_USERNAME/ComfyUI-Style-Matrix"
+
+[tool.comfy]
+PublisherId = "YOUR_PUBLISHER_ID"
+DisplayName = "Style Matrix"
+Icon = ""

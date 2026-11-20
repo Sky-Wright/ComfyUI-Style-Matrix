@@ -2,20 +2,20 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
 app.registerExtension({
-    name: "SDNext.PromptLoader",
-    
-    // This hook is called by ComfyUI when the user clicks 'Refresh' or presses 'R'
+    name: "StyleMatrix.PromptManager",
+
+    // Called by ComfyUI when the user clicks 'Refresh' or presses 'R'
     refreshComboInNodes() {
         if (!app.graph) return;
         for (const node of app.graph._nodes) {
-            if (node.type === "SDNextStyleLoader" && node._refreshStyles) {
+            if (node.type === "StyleMatrix" && node._refreshStyles) {
                 node._refreshStyles();
             }
         }
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name === "SDNextStyleLoader") {
+        if (nodeData.name === "StyleMatrix") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 const r = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
@@ -28,16 +28,14 @@ app.registerExtension({
                 const filenameWidget = this.widgets.find((w) => w.name === "filename");
 
                 if (categoryWidget && styleWidget && posWidget && negWidget && sortWidget && filenameWidget) {
-                    let allCategories = {}; // map of category -> styles array
+                    let allCategories = {};
 
                     const updateStyleList = () => {
                         const selectedCategory = categoryWidget.value;
                         let items = allCategories[selectedCategory] || [];
 
-                        // Make a copy to avoid mutating the original fetched data
-                        items = items.slice().filter(s => 
-                            s.name !== "Select Style" && 
-                            s.name !== "No Styles Found"
+                        items = items.slice().filter(
+                            (s) => s.name !== "Select Style" && s.name !== "No Styles Found"
                         );
 
                         const currentSortMode = sortWidget.value;
@@ -52,7 +50,7 @@ app.registerExtension({
                             items.sort((a, b) => b.name.localeCompare(a.name));
                         }
 
-                        let sortedNames = items.map(s => s.name);
+                        const sortedNames = items.map((s) => s.name);
 
                         if (sortedNames.length > 0) {
                             sortedNames.unshift("Select Style");
@@ -60,27 +58,23 @@ app.registerExtension({
                             sortedNames.push("No Styles Found");
                         }
 
-                        // Save current value before updating options to try and preserve it
                         const prevValue = styleWidget.value;
                         styleWidget.options.values = sortedNames;
-                        
+
                         if (styleWidget.options.values.includes(prevValue)) {
                             styleWidget.value = prevValue;
                         } else if (styleWidget.options.values.length > 0) {
                             styleWidget.value = styleWidget.options.values[0];
                         }
-                        
-                        // Tell ComfyUI to redraw the node
+
                         if (this.setDirtyCanvas) {
                             this.setDirtyCanvas(true, true);
                         }
                     };
 
-                    // When category changes, update the style dropdown list
                     const origCategoryCallback = categoryWidget.callback;
                     categoryWidget.callback = function (value, canvas, node, pos, event) {
                         if (origCategoryCallback) origCategoryCallback.apply(this, arguments);
-                        // Update the internal value before updating the list
                         categoryWidget.value = value;
                         updateStyleList();
                     };
@@ -89,71 +83,63 @@ app.registerExtension({
                     sortWidget.callback = async function (value, canvas, node, pos, event) {
                         if (origSortCallback) origSortCallback.apply(this, arguments);
                         try {
-                            // We still save to backend config if requested, but rely mostly on workflow state
-                            await api.fetchApi("/sdnext/save_sort_mode", {
+                            await api.fetchApi("/style_matrix/save_sort_mode", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ sort_mode: value })
+                                body: JSON.stringify({ sort_mode: value }),
                             });
                         } catch (e) {
-                            console.error("Failed to save sort mode", e);
+                            console.error("StyleMatrix: Failed to save sort mode", e);
                         }
                         updateStyleList();
                     };
 
                     const refreshStyles = async (selectCategory = null, selectName = null) => {
                         try {
-                            const confRes = await api.fetchApi("/sdnext/get_config");
+                            const confRes = await api.fetchApi("/style_matrix/get_config");
                             if (confRes.ok) {
                                 const confData = await confRes.json();
                                 if (confData.sort_mode && sortWidget.value === "A-Z") {
-                                    // Only apply config if we are currently at default, avoiding overriding workflow state
                                     sortWidget.value = confData.sort_mode;
                                 }
                             }
 
-                            const response = await api.fetchApi("/sdnext/refresh_styles_detailed");
+                            const response = await api.fetchApi("/style_matrix/refresh_styles_detailed");
                             if (response.ok) {
                                 const data = await response.json();
                                 if (data.categories) {
-                                    allCategories = data.categories; 
-                                    
-                                    // Update category widget options
+                                    allCategories = data.categories;
+
                                     const catNames = Object.keys(allCategories).sort();
-                                    if(catNames.length === 0) catNames.push("Uncategorized");
+                                    if (catNames.length === 0) catNames.push("Uncategorized");
                                     categoryWidget.options.values = catNames;
-                                    
+
                                     if (selectCategory && catNames.includes(selectCategory)) {
                                         categoryWidget.value = selectCategory;
                                     } else if (!catNames.includes(categoryWidget.value)) {
                                         categoryWidget.value = catNames[0];
                                     }
-                                    
+
                                     updateStyleList();
-                                    
+
                                     if (selectName) {
                                         styleWidget.value = selectName;
                                     }
                                 }
                             }
                         } catch (error) {
-                            console.error("SDNext Refresh Error:", error);
+                            console.error("StyleMatrix Refresh Error:", error);
                         }
                     };
-                    
-                    // Expose refresh function so the global ComfyUI refresh hook can call it
+
                     this._refreshStyles = refreshStyles;
 
-                    // When ComfyUI restores the graph from a saved workflow/refresh, 
-                    // it calls onConfigure. We must update the style list here so it 
-                    // respects the restored sortWidget.value and categoryWidget.value.
                     const origOnConfigure = this.onConfigure;
-                    this.onConfigure = function(info) {
+                    this.onConfigure = function (info) {
                         if (origOnConfigure) origOnConfigure.apply(this, arguments);
                         updateStyleList();
                     };
 
-                    // Initial refresh without blocking
                     refreshStyles();
 
                     const originalCallback = styleWidget.callback;
@@ -166,7 +152,9 @@ app.registerExtension({
                         }
                         try {
                             const catValue = categoryWidget.value;
-                            const response = await api.fetchApi(`/sdnext/get_style_content?category=${encodeURIComponent(catValue)}&name=${encodeURIComponent(value)}`);
+                            const response = await api.fetchApi(
+                                `/style_matrix/get_style_content?category=${encodeURIComponent(catValue)}&name=${encodeURIComponent(value)}`
+                            );
                             if (response.ok) {
                                 const data = await response.json();
                                 if (data.positive !== undefined) posWidget.value = data.positive;
@@ -185,51 +173,53 @@ app.registerExtension({
                                 }
                             }
                         } catch (error) {
-                            console.error("SDNext Loader Error:", error);
+                            console.error("StyleMatrix Loader Error:", error);
                         }
                     };
 
-                    this.addWidget("button", "New / Clear", "new", function (value, canvas, node) {
+                    this.addWidget("button", "New / Clear", "new", (value, canvas, node) => {
                         posWidget.value = "";
                         negWidget.value = "";
                         filenameWidget.value = "MyNewStyle";
-                        styleWidget.value = styleWidget.options.values.includes("Select Style") ? "Select Style" : styleWidget.options.values[0];
+                        styleWidget.value = styleWidget.options.values.includes("Select Style")
+                            ? "Select Style"
+                            : styleWidget.options.values[0];
                         if (node && node.setDirtyCanvas) node.setDirtyCanvas(true, true);
                         else if (this && this.setDirtyCanvas) this.setDirtyCanvas(true, true);
                     });
 
-                    this.addWidget("button", "New Category", "new_category", async function (value, canvas, node) {
-                        const categoryName = window.prompt("Enter new category name (e.g., CyberSky):");
+                    this.addWidget("button", "New Category", "new_category", async (value, canvas, node) => {
+                        const categoryName = window.prompt("Enter new category name (e.g., CyberStyle):");
                         if (!categoryName || categoryName.trim() === "") return;
 
                         try {
-                            const response = await fetch('/sdnext/create_category', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ category: categoryName.trim() })
+                            const response = await api.fetchApi("/style_matrix/create_category", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ category: categoryName.trim() }),
                             });
-                            
+
                             const result = await response.json();
-                            
+
                             if (result.status === "success") {
                                 await refreshStyles(categoryName.trim());
-                                window.alert(`Category "${categoryName}" created successfully!`);
+                                window.alert(`Category "${categoryName.trim()}" created successfully!`);
                             } else {
                                 window.alert(`Error: ${result.detail}`);
                             }
                         } catch (error) {
-                            console.error("Failed to create category:", error);
+                            console.error("StyleMatrix: Failed to create category:", error);
                         }
                     });
 
-                    this.addWidget("button", "Refresh List", "refresh", function (value, canvas, node) {
+                    this.addWidget("button", "Refresh List", "refresh", (value, canvas, node) => {
                         refreshStyles();
                     });
 
-                    const saveButton = this.addWidget("button", "Save Style", "save", async function (value, canvas, node) {
+                    this.addWidget("button", "Save Style", "save", async (value, canvas, node) => {
                         const filename = filenameWidget.value;
                         const category = categoryWidget.value;
-                        
+
                         if (!filename || !filename.trim()) {
                             window.alert("Please enter a filename to save the style.");
                             return;
@@ -243,7 +233,7 @@ app.registerExtension({
                         };
 
                         try {
-                            const response = await api.fetchApi("/sdnext/save_style", {
+                            const response = await api.fetchApi("/style_matrix/save_style", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify(body),
@@ -252,17 +242,57 @@ app.registerExtension({
                             const res = await response.json();
 
                             if (response.ok) {
-                                // Backend converts spaces to underscores, so we must do the same to auto-select it
                                 const safeFilename = filename.replace(/ /g, "_");
                                 await refreshStyles(category, safeFilename);
-                                filenameWidget.value = safeFilename; // Update the text box to reflect the real saved name
+                                filenameWidget.value = safeFilename;
                                 window.alert(res.message || "Style saved successfully!");
                             } else {
                                 window.alert(`Error saving style: ${res.error || "Unknown error"}`);
                             }
                         } catch (error) {
-                            console.error("SDNext Save Error:", error);
+                            console.error("StyleMatrix Save Error:", error);
                             window.alert(`An error occurred while saving the style: ${error.message}`);
+                        }
+                    });
+
+                    this.addWidget("button", "Delete Style", "delete", async (value, canvas, node) => {
+                        const selectedStyle = styleWidget.value;
+                        const category = categoryWidget.value;
+
+                        if (
+                            !selectedStyle ||
+                            selectedStyle === "Select Style" ||
+                            selectedStyle === "No Styles Found"
+                        ) {
+                            window.alert("Please select a style to delete first.");
+                            return;
+                        }
+
+                        if (!window.confirm(`Delete style "${selectedStyle}" from "${category}"? This cannot be undone.`)) {
+                            return;
+                        }
+
+                        try {
+                            const response = await api.fetchApi("/style_matrix/delete_style", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ category, name: selectedStyle }),
+                            });
+
+                            const res = await response.json();
+
+                            if (response.ok) {
+                                posWidget.value = "";
+                                negWidget.value = "";
+                                filenameWidget.value = "MyNewStyle";
+                                await refreshStyles(category);
+                                window.alert(res.message || "Style deleted.");
+                            } else {
+                                window.alert(`Error deleting style: ${res.error || "Unknown error"}`);
+                            }
+                        } catch (error) {
+                            console.error("StyleMatrix Delete Error:", error);
+                            window.alert(`An error occurred while deleting the style: ${error.message}`);
                         }
                     });
                 }
