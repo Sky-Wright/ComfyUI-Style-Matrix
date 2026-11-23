@@ -10,6 +10,9 @@ def clean_prompt(text):
     if not isinstance(text, str):
         return text
 
+    # Convert literal "\n" sequences (common when pasting from LLMs/JSON) into real newlines
+    text = text.replace("\\n", "\n")
+
     lines = text.split("\n")
     cleaned_lines = []
     current_line = []
