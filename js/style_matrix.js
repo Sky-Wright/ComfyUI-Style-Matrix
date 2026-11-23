@@ -228,21 +228,32 @@ app.registerExtension({
                         }
 
                         isSaving = true;
-                        const body = {
-                            filename: filename,
-                            category: category,
-                            positive: posWidget.value,
-                            negative: negWidget.value,
-                        };
-
-                        try {
+                        const sendSave = async (overwrite) => {
                             const response = await api.fetchApi("/style_matrix/save_style", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(body),
+                                body: JSON.stringify({
+                                    filename: filename,
+                                    category: category,
+                                    positive: posWidget.value,
+                                    negative: negWidget.value,
+                                    overwrite,
+                                }),
                             });
-
                             const res = await response.json();
+                            return { response, res };
+                        };
+
+                        try {
+                            let { response, res } = await sendSave(false);
+
+                            if (response.status === 409 && res.exists) {
+                                const safeFilename = filename.replace(/ /g, "_").replace(/\.json$/i, "");
+                                if (!window.confirm(`Style "${safeFilename}" already exists in "${category}". Overwrite it?`)) {
+                                    return;
+                                }
+                                ({ response, res } = await sendSave(true));
+                            }
 
                             if (response.ok) {
                                 const safeFilename = filename.replace(/ /g, "_");

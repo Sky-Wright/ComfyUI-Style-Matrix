@@ -254,6 +254,7 @@ async def save_style(request):
         category = data.get("category", "Uncategorized")
         positive_prompt = clean_prompt(data.get("positive", ""))
         negative_prompt = clean_prompt(data.get("negative", ""))
+        overwrite = bool(data.get("overwrite", False))
     except Exception as e:
         return web.json_response({"error": f"Invalid request data: {e}"}, status=400)
 
@@ -282,6 +283,12 @@ async def save_style(request):
 
     style_name = os.path.splitext(filename)[0]
     full_path = os.path.join(save_dir, filename)
+
+    if os.path.exists(full_path) and not overwrite:
+        return web.json_response(
+            {"exists": True, "error": f"Style '{style_name}' already exists in '{category}'."},
+            status=409,
+        )
 
     style_content = {
         "name": style_name,
