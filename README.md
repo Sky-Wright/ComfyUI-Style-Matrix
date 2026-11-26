@@ -1,43 +1,61 @@
 # ComfyUI Style Matrix
 
-An interactive JSON prompt style manager for [ComfyUI](https://github.com/comfyanonymous/ComfyUI) — built as much for **organizing large style libraries** as for **rapidly creating and iterating on new ones**.
+A clean, interactive prompt & style manager for [ComfyUI](https://github.com/comfyanonymous/ComfyUI).
 
-It effectively replaces typing prompts directly into your CLIP Text Encode nodes: right-click your positive/negative CLIP nodes, convert `text` to an input, and wire **Style Matrix** straight in. Browse categorized `.json` styles, sort by name or recency, live-edit prompts before generating, and save or delete styles without leaving the graph.
+Stop copy-pasting prompts out of random text files. **Style Matrix** isn't just a static preset loader—it's built from the ground up as a daily workspace for **writing new prompts from scratch, iterating on them live, saving them on the fly, and keeping a growing prompt library neatly organized** into folder-based categories without ever leaving ComfyUI.
 
-## Features
+![ComfyUI Style Matrix](Screenshot.png)
 
-- **Interactive Loading:** Selecting a style from the dropdown immediately loads its JSON into editable `positive` and `negative` text boxes.
-- **Folder-Based Categories:** Subdirectories inside your styles folder automatically become categories, with an in-node **New Category** button.
-- **Sorting:** Sort styles `A-Z`, `Z-A`, `Newest`, or `Oldest`.
-- **Save & Delete:** Save edits or new styles back to `.json` files, or remove unwanted styles safely with a confirmation prompt.
-- **Flexible Path Discovery:** Checks `style_matrix_config.json` (`search_paths`), `extra_model_paths.yaml` (`styles`), `../models/styles`, and `ComfyUI/models/styles`.
-- **Standard JSON Format:**
-  ```json
-  {
-    "name": "My_Style",
-    "description": "Saved from ComfyUI Style Matrix",
-    "prompt": "masterpiece, best quality...",
-    "negative": "lowres, bad anatomy...",
-    "extra": ""
-  }
-  ```
-- **Universal Outputs:** Outputs `positive_text`, `negative_text`, and `style_name_text` (`STRING`), compatible with any CLIP Text Encode node.
+## What It Does
+
+- **Built for writing & iterating:** Use it directly in place of your CLIP text boxes—draft brand-new prompts, tweak existing ones live before generating, and hit **Save** the moment you nail a keeper.
+- **Folder-based categories:** Subfolders inside your styles directory automatically show up as categories—plus an in-node **New Category** button.
+- **Save & delete in-graph:** Save new styles or overwrite edits straight to `.json`, or delete old ones with a confirmation prompt.
+- **Quick sorting:** Sort styles by `A-Z`, `Z-A`, `Newest`, or `Oldest`.
+- **Works with any CLIP Text Encode node:** Outputs plain `STRING` (`positive_text`, `negative_text`, `style_name_text`).
 
 ## Installation
 
-1. Clone this repository into your `ComfyUI/custom_nodes/` directory:
-   ```bash
-   cd ComfyUI/custom_nodes
-   git clone https://github.com/Sky-Wright/ComfyUI-Style-Matrix.git
-   ```
-2. Restart ComfyUI.
+### Option 1: ComfyUI Manager (Recommended)
+1. Open **ComfyUI Manager** → **Custom Nodes Manager**.
+2. Search for **`Style Matrix`** (or `comfyui-style-matrix`) and click **Install**.
+3. Restart ComfyUI.
 
-## Usage
+Or via Comfy CLI:
+```bash
+comfy node registry-install comfyui-style-matrix
+```
 
-1. **Place your JSON styles** in `ComfyUI/models/styles/` (or configure `styles:` in `extra_model_paths.yaml`).
-2. **Add the Node:** Right-click > `utils` > `styles` > `Style Matrix`.
-3. **Select a Category & Style:** Pick a style from the dropdown to populate the prompt boxes.
-4. **Connect:** On your positive and negative **CLIP Text Encode** nodes, right-click > **Convert Widget to Input** > `text`, then wire `positive_text` and `negative_text` into them.
+### Option 2: Manual (`git clone`)
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/Sky-Wright/ComfyUI-Style-Matrix.git
+```
+Then restart ComfyUI.
+
+## Quick Start
+
+1. **Add the node:** Right-click on the canvas → `utils` → `styles` → **Style Matrix**.
+2. **Wire it to your CLIP nodes:** On your positive and negative **CLIP Text Encode** nodes, right-click → **Convert Widget to Input** → `text`, then connect `positive_text` and `negative_text`.
+3. **Create or load styles:** Type prompts straight into the node and click **Save** (no manual JSON editing needed), or drop existing `.json` style files into `ComfyUI/models/styles/`.
+
+## Where Styles Are Stored
+
+By default, Style Matrix looks for your styles folder in this order:
+1. `search_paths` in `style_matrix_config.json` (if configured)
+2. `styles:` in ComfyUI's `extra_model_paths.yaml`
+3. `../models/styles` or `ComfyUI/models/styles`
+
+Each style is saved as a simple `.json` file:
+```json
+{
+  "name": "My_Style",
+  "description": "Saved from ComfyUI Style Matrix",
+  "prompt": "masterpiece, best quality...",
+  "negative": "lowres, bad anatomy...",
+  "extra": ""
+}
+```
 
 ## License
 
