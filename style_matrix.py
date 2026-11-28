@@ -120,52 +120,109 @@ def load_search_paths_from_config():
 SEARCH_PATHS = load_search_paths_from_config()
 
 
+def _split_category(rel_path):
+    """Split a relative directory path into (top_category, subcategory_path).
+    '.' -> ('Uncategorized', '')
+    'Sky' -> ('Sky', '')
+    'Characters/Asta' -> ('Characters', 'Asta')
+    'Characters/BDO/Vizeri' -> ('Characters', 'BDO/Vizeri')
+    """
+    if not rel_path or rel_path == ".":
+        return "Uncategorized", ""
+    parts = rel_path.replace("\\", "/").strip("/").split("/")
+    top = parts[0]
+    sub = "/".join(parts[1:]) if len(parts) > 1 else ""
+    return top, sub
+
+
 def get_all_styles():
+    """Walk all configured style paths and return:
+    - categorized_prompts: {top_category: {display_name: info_dict}}
+    - flat_map: {"top_category||display_name": info_dict}
+    - subcategories: {top_category: sorted_list_of_subcategories}
+    """
     categorized_prompts = {}
     flat_map = {}
+    subcategories_map = {}
 
     for search_path in SEARCH_PATHS:
-        if os.path.exists(search_path):
-            try:
-                for root, _dirs, files in os.walk(search_path):
-                    for f in files:
-                        if f.lower().endswith(".json"):
-                            full_path = os.path.join(root, f)
-                            try:
-                                mtime = os.path.getmtime(full_path)
-                                with open(full_path, "r", encoding="utf-8") as json_f:
-                                    data = json.load(json_f)
+        if not os.path.exists(search_path):
+            continue
+        try:
+            for root, dirs, files in os.walk(search_path):
+                # Skip hidden directories (.git, .crush, etc.) and __pycache__
+                dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "__pycache__")
 
-                                rel_path = os.path.relpath(root, search_path)
-                                if rel_path == ".":
-                                    category = "Uncategorized"
-                                else:
-                                    category = rel_path.split(os.sep)[0]
+                rel_path = os.path.relpath(root, search_path)
+                top_cat, sub_cat = _split_category(rel_path)
 
-                                base_name = data.get("name", os.path.splitext(f)[0])
+                # Register non-root directories even if currently empty
+                if rel_path != ".":
+                    categorized_prompts.setdefault(top_cat, {})
+                    subcategories_map.setdefault(top_cat, set())
+                    if sub_cat:
+                        subcategories_map[top_cat].add(sub_cat)
 
-                                if category not in categorized_prompts:
-                                    categorized_prompts[category] = {}
+                for f in files:
+                    if not f.lower().endswith(".json"):
+                        continue
+                    full_path = os.path.join(root, f)
+                    try:
+                        mtime = os.path.getmtime(full_path)
+                        with open(full_path, "r", encoding="utf-8") as json_f:
+                            data = json.load(json_f)
 
-                                display_name = base_name
-                                if display_name in categorized_prompts[category]:
-                                    display_name = f"{display_name} ({f})"
+                        if not isinstance(data, dict):
+                            continue
 
-                                info = {"path": full_path, "mtime": mtime, "category": category}
-                                categorized_prompts[category][display_name] = info
-                                flat_map[f"{category}||{display_name}"] = info
-                            except Exception as e:
-                                print(f"StyleMatrix: Skipping '{f}' in '{root}' due to read error: {e}")
-                                continue
-            except Exception as e:
-                print(f"StyleMatrix: Skipping directory '{search_path}' due to access error: {e}")
+                        base_name = data.get("name", os.path.splitext(f)[0])
+                        if not isinstance(base_name, str) or not base_name.strip():
+                            base_name = os.path.splitext(f)[0]
+
+                        categorized_prompts.setdefault(top_cat, {})
+                        subcategories_map.setdefault(top_cat, set())
+                        if sub_cat:
+                            subcategories_map[top_cat].add(sub_cat)
+
+                        display_name = base_name
+                        if display_name in categorized_prompts[top_cat]:
+                            if sub_cat:
+                                display_name = f"{base_name} [{sub_cat}]"
+                            if display_name in categorized_prompts[top_cat]:
+                                display_name = f"{base_name} ({f})"
+
+                        pos_str = data.get("prompt", "") or ""
+                        neg_str = data.get("negative", "") or ""
+                        search_blob = f"{display_name}\n{sub_cat}\n{pos_str}\n{neg_str}".lower()
+
+                        info = {
+                            "path": full_path,
+                            "mtime": mtime,
+                            "category": top_cat,
+                            "subcategory": sub_cat,
+                            "search_blob": search_blob,
+                        }
+                        categorized_prompts[top_cat][display_name] = info
+                        flat_map[f"{top_cat}||{display_name}"] = info
+                    except Exception as e:
+                        print(f"StyleMatrix: Skipping '{f}' in '{root}' due to read error: {e}")
+                        continue
+        except Exception as e:
+            print(f"StyleMatrix: Skipping directory '{search_path}' due to access error: {e}")
 
     sorted_categorized = {k: categorized_prompts[k] for k in sorted(categorized_prompts.keys())}
-    return sorted_categorized, flat_map
+    sorted_subcats = {k: sorted(subcategories_map.get(k, set())) for k in sorted_categorized.keys()}
+    return sorted_categorized, flat_map, sorted_subcats
 
 
 STYLE_MAP = {}
 CATEGORIZED_STYLES = {}
+SUBCATEGORIES = {}
+
+
+def _reload_cache():
+    global STYLE_MAP, CATEGORIZED_STYLES, SUBCATEGORIES
+    CATEGORIZED_STYLES, STYLE_MAP, SUBCATEGORIES = get_all_styles()
 
 
 @PromptServer.instance.routes.get("/style_matrix/get_config")
@@ -193,7 +250,8 @@ async def get_style_content(request):
     key = f"{category}||{name}"
 
     if key in STYLE_MAP:
-        path = STYLE_MAP[key]["path"]
+        info = STYLE_MAP[key]
+        path = info["path"]
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -203,6 +261,7 @@ async def get_style_content(request):
                     return web.json_response({
                         "positive": positive,
                         "negative": negative,
+                        "subcategory": info.get("subcategory", ""),
                     })
             except Exception as e:
                 return web.json_response({"error": str(e)}, status=500)
@@ -211,14 +270,66 @@ async def get_style_content(request):
 
 @PromptServer.instance.routes.get("/style_matrix/refresh_styles_detailed")
 async def refresh_styles_detailed(request):
-    global STYLE_MAP, CATEGORIZED_STYLES
-    CATEGORIZED_STYLES, STYLE_MAP = get_all_styles()
+    _reload_cache()
 
     response_data = {}
     for cat, styles in CATEGORIZED_STYLES.items():
-        response_data[cat] = [{"name": name, "mtime": info["mtime"]} for name, info in styles.items()]
+        response_data[cat] = [
+            {
+                "name": name,
+                "mtime": info["mtime"],
+                "category": cat,
+                "subcategory": info.get("subcategory", ""),
+            }
+            for name, info in styles.items()
+        ]
 
-    return web.json_response({"categories": response_data})
+    return web.json_response({
+        "categories": response_data,
+        "subcategories": SUBCATEGORIES,
+    })
+
+
+@PromptServer.instance.routes.get("/style_matrix/search")
+async def search_styles(request):
+    """Full-text search across style name, subcategory, positive, and negative prompt text."""
+    if not CATEGORIZED_STYLES:
+        _reload_cache()
+
+    category = request.rel_url.query.get("category", "")
+    subcategory = request.rel_url.query.get("subcategory", "")
+    query = request.rel_url.query.get("q", "").strip().lower()
+    terms = [t for t in query.split() if t]
+
+    if category == "(All)":
+        cats_to_search = list(CATEGORIZED_STYLES.items())
+    else:
+        cats_to_search = [(category, CATEGORIZED_STYLES.get(category, {}))]
+
+    matches = []
+    for cat, styles in cats_to_search:
+        for name, info in styles.items():
+            sub = info.get("subcategory", "")
+            if category != "(All)" and subcategory and subcategory != "(All)":
+                if subcategory == "(Root)":
+                    if sub != "":
+                        continue
+                elif sub != subcategory and not sub.startswith(subcategory + "/"):
+                    continue
+
+            if terms:
+                blob = info.get("search_blob", name.lower())
+                if not all(t in blob for t in terms):
+                    continue
+
+            matches.append({
+                "name": name,
+                "mtime": info["mtime"],
+                "category": cat,
+                "subcategory": sub,
+            })
+
+    return web.json_response({"matches": matches})
 
 
 @PromptServer.instance.routes.post("/style_matrix/create_category")
@@ -229,7 +340,7 @@ async def create_new_category_folder(request):
     base_styles_dir = SEARCH_PATHS[0]
     try:
         json_data = await request.json()
-        category_name = json_data.get("category", "").strip()
+        category_name = json_data.get("category", "").strip().replace("\\", "/").strip("/")
 
         if not category_name:
             return web.json_response({"status": "error", "detail": "Category name cannot be empty"}, status=400)
@@ -239,7 +350,14 @@ async def create_new_category_folder(request):
             return web.json_response({"status": "error", "detail": "Invalid directory path"}, status=400)
 
         os.makedirs(target_dir, exist_ok=True)
-        return web.json_response({"status": "success", "message": f"Created category: {category_name}"})
+        _reload_cache()
+        top_cat, sub_cat = _split_category(category_name)
+        return web.json_response({
+            "status": "success",
+            "message": f"Created category: {category_name}",
+            "category": top_cat,
+            "subcategory": sub_cat,
+        })
     except Exception as e:
         return web.json_response({"status": "error", "detail": str(e)}, status=500)
 
@@ -255,6 +373,7 @@ async def save_style(request):
         data = await request.json()
         filename = data.get("filename")
         category = data.get("category", "Uncategorized")
+        subcategory = (data.get("subcategory") or "").strip().replace("\\", "/").strip("/")
         positive_prompt = clean_prompt(data.get("positive", ""))
         negative_prompt = clean_prompt(data.get("negative", ""))
         overwrite = bool(data.get("overwrite", False))
@@ -264,9 +383,16 @@ async def save_style(request):
     if not filename:
         return web.json_response({"error": "Filename cannot be empty."}, status=400)
 
+    if category == "(All)":
+        return web.json_response({"error": "Please select a specific category before saving a new style."}, status=400)
+
+    if subcategory in ("(All)", "(Root)", "(None)"):
+        subcategory = ""
+
     save_dir = base_dir
     if category and category != "Uncategorized":
-        save_dir = os.path.normpath(os.path.join(base_dir, category))
+        rel_target = os.path.join(category, subcategory) if subcategory else category
+        save_dir = os.path.normpath(os.path.join(base_dir, rel_target))
         if not _is_within_base(base_dir, save_dir):
             return web.json_response({"error": "Invalid category path."}, status=400)
 
@@ -286,10 +412,11 @@ async def save_style(request):
 
     style_name = os.path.splitext(filename)[0]
     full_path = os.path.join(save_dir, filename)
+    display_loc = f"{category}/{subcategory}" if subcategory else category
 
     if os.path.exists(full_path) and not overwrite:
         return web.json_response(
-            {"exists": True, "error": f"Style '{style_name}' already exists in '{category}'."},
+            {"exists": True, "error": f"Style '{style_name}' already exists in '{display_loc}'."},
             status=409,
         )
 
@@ -305,17 +432,15 @@ async def save_style(request):
         with open(full_path, "w", encoding="utf-8") as f:
             json.dump(style_content, f, indent=2, ensure_ascii=False)
 
-        global STYLE_MAP, CATEGORIZED_STYLES
-        CATEGORIZED_STYLES, STYLE_MAP = get_all_styles()
+        _reload_cache()
 
-        return web.json_response({"success": True, "message": "Style saved successfully!"})
+        return web.json_response({"success": True, "message": f"Style saved to '{display_loc}'!"})
     except Exception as e:
         return web.json_response({"error": f"Failed to save style: {e}"}, status=500)
 
 
 @PromptServer.instance.routes.post("/style_matrix/delete_style")
 async def delete_style(request):
-    global STYLE_MAP, CATEGORIZED_STYLES
     try:
         data = await request.json()
         category = data.get("category", "")
@@ -336,7 +461,7 @@ async def delete_style(request):
 
     try:
         os.remove(target_path)
-        CATEGORIZED_STYLES, STYLE_MAP = get_all_styles()
+        _reload_cache()
         return web.json_response({"success": True, "message": f"Deleted style '{name}'."})
     except Exception as e:
         return web.json_response({"error": f"Failed to delete style: {e}"}, status=500)
@@ -348,12 +473,11 @@ class StyleMatrix:
 
     @classmethod
     def INPUT_TYPES(cls):
-        global STYLE_MAP, CATEGORIZED_STYLES
-        CATEGORIZED_STYLES, STYLE_MAP = get_all_styles()
+        _reload_cache()
 
-        categories = sorted(list(CATEGORIZED_STYLES.keys()))
-        if not categories:
-            categories = ["Uncategorized"]
+        categories = ["(All)"] + sorted(list(CATEGORIZED_STYLES.keys()))
+        if len(categories) == 1:
+            categories = ["(All)", "Uncategorized"]
 
         # Provide all valid style names across categories so ComfyUI backend validation passes
         all_valid_styles = ["Select Style"]
